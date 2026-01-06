@@ -11,26 +11,61 @@
   <div id="overlay" class="overlay">
     <div id="lobby" class="panel">
       <h1>ストロベリー・エスケープ：王の祝宴</h1>
-      <label>表示名: <input id="nameInput" placeholder="名前を入力" /></label>
+
+      <label>表示名: <input id="nameInput" placeholder="名前を入力 (重複不可)" /></label>
+
       <div class="teams">
         <div>
           <h3>👑 主役チーム</h3>
-          <button id="joinKingBtn">＋ 王になる</button>
-          <button id="joinGuardBtn">＋ 手下になる</button>
+          <button id="joinKingBtn">＋ 王になる（待機）</button>
+          <button id="joinGuardBtn">＋ 部下になる（自分だけ即開始）</button>
+          <button id="joinGuardWaitBtn">＋ 部下になる（待機）</button>
         </div>
         <div>
           <h3>🍓 イチゴチーム</h3>
-          <button id="joinStrawBtn">＋ イチゴになる</button>
+          <button id="joinStrawBtn">＋ イチゴになる（待機）</button>
         </div>
       </div>
+
       <div class="participants">
         <h4>参加者一覧</h4>
-        <ul id="playersList"></ul>
+        <div id="playersGrouped">
+          <!-- 王 -->
+          <div class="group">
+            <div class="groupTitle">王</div>
+            <div id="groupKing" class="groupList"></div>
+          </div>
+          <!-- 部下 -->
+          <div class="group">
+            <div class="groupTitle">部下</div>
+            <div id="groupGuard" class="groupList"></div>
+          </div>
+          <!-- イチゴ -->
+          <div class="group">
+            <div class="groupTitle">イチゴ</div>
+            <div id="groupStraw" class="groupList"></div>
+          </div>
+        </div>
       </div>
+
       <div class="info">
         <p>操作: WASD 移動 / SPACE 能力使用</p>
       </div>
-      <button id="enterGameBtn">入室（名前必須）</button>
+
+      <div class="adminRow">
+        <input id="adminPass" placeholder="運営パスワード" />
+        <button id="adminDecide">決定</button>
+        <div id="adminBadge" class="adminBadge hidden">運営モード</div>
+      </div>
+
+      <div id="lobbyButtons">
+        <button id="enterGameBtn">入室（名前必須・待機）</button>
+      </div>
+
+      <div id="waitingNotice" class="waitingNotice hidden">
+        <strong>現在待機中</strong>
+        <p>ゲームは運営モードの開始ボタンを押すまで始まりません。</p>
+      </div>
     </div>
   </div>
 
@@ -44,7 +79,12 @@
     <canvas id="gameCanvas" width="840" height="840"></canvas>
 
     <div id="rightPanel" class="rightpanel">
-      <h4>チーム選択</h4>
+      <h4>チーム操作（運営用）</h4>
+      <div id="adminControls" class="adminControls hidden">
+        <button id="startGameBtn">運営: ゲーム開始</button>
+        <button id="stopGameBtn">運営: ゲーム停止</button>
+        <button id="clearAllBtn">運営: 全データ削除</button>
+      </div>
       <div id="teamButtons"></div>
     </div>
 
