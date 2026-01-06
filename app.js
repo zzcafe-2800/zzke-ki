@@ -46,7 +46,7 @@ let captureCount = 0;
 let remainingTime = 10 * 60; // seconds
 
 // Asset base (as requested)
-const ASSET_BASE = "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png"";
+const ASSET_BASE = "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png";
 const ASSETS = {
   king: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
   guard: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
