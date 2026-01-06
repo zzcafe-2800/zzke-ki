@@ -1,0 +1,26 @@
+:root{
+  --bg:#0f0f12;
+  --panel:#111217cc;
+  --accent:#ff6b9a;
+  --text:#e6eef8;
+}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif}
+.overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+.panel{background:var(--panel);padding:20px;border-radius:10px;max-width:900px;width:90%}
+.teams{display:flex;gap:24px;margin:12px 0}
+button{background:var(--accent);border:none;color:white;padding:10px 12px;border-radius:6px;cursor:pointer}
+button[disabled]{opacity:.4;cursor:not-allowed}
+.participants{margin-top:12px;background:#00000022;padding:8px;border-radius:6px}
+.participants ul{list-style:none;padding:0;margin:0}
+#enterGameBtn{margin-top:12px}
+
+.game-ui{position:relative;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.hidden{display:none}
+.topbar{position:fixed;top:12px;left:50%;transform:translateX(-50%);display:flex;gap:24px;align-items:center;background:#00000055;padding:8px 12px;border-radius:8px}
+.gauge{font-weight:700}
+#gameCanvas{border:4px solid #00000066;box-shadow:0 2px 20px #000}
+.rightpanel{position:fixed;right:12px;top:80px;background:#00000055;padding:10px;border-radius:8px}
+.chatstack{position:fixed;right:12px;bottom:12px;width:240px;max-height:320px;overflow:hidden}
+.chatstack .chat{background:#00000088;padding:6px;margin-bottom:6px;border-radius:6px;opacity:.9}
+.minimap{position:fixed;right:12px;top:12px;width:140px;height:140px;background:#00000066;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff}
+.role{width:40px;height:40px;background:#222;border-radius:50%}
