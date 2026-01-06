@@ -46,16 +46,16 @@ let captureCount = 0;
 let remainingTime = 10 * 60; // seconds
 
 // Asset base (as requested)
-const ASSET_BASE = "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/";
+const ASSET_BASE = "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png"";
 const ASSETS = {
-  king: ASSET_BASE + "kyoku_king.png",
-  guard: ASSET_BASE + "kyoku_guard.png",
-  strawberry: ASSET_BASE + "kyoku_strawberry.png",
-  map: ASSET_BASE + "kyoku_map.png",
-  footstep: ASSET_BASE + "kyoku_footstep.mp3",
-  heartbeat: ASSET_BASE + "kyoku_heartbeat.mp3",
-  lowrumble: ASSET_BASE + "kyoku_lowrumble.mp3",
-  captureSE: ASSET_BASE + "kyoku_capture.mp3"
+  king: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
+  guard: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
+  strawberry: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
+  map: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
+  footstep: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3",
+  heartbeat: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3",
+  lowrumble: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3",
+  captureSE: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3"
 };
 const audioCache = {};
 function loadAudio(name, url){
