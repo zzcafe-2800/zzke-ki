@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ストロベリー・エスケープ：王の祝宴 - Prototype</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- LOBBY / HUD -->
+  <div id="overlay" class="overlay">
+    <div id="lobby" class="panel">
+      <h1>ストロベリー・エスケープ：王の祝宴</h1>
+      <label>表示名: <input id="nameInput" placeholder="名前を入力" /></label>
+      <div class="teams">
+        <div>
+          <h3>👑 主役チーム</h3>
+          <button id="joinKingBtn">＋ 王になる</button>
+          <button id="joinGuardBtn">＋ 手下になる</button>
+        </div>
+        <div>
+          <h3>🍓 イチゴチーム</h3>
+          <button id="joinStrawBtn">＋ イチゴになる</button>
+        </div>
+      </div>
+      <div class="participants">
+        <h4>参加者一覧</h4>
+        <ul id="playersList"></ul>
+      </div>
+      <div class="info">
+        <p>操作: WASD 移動 / SPACE 能力使用</p>
+      </div>
+      <button id="enterGameBtn">入室（名前必須）</button>
+    </div>
+  </div>
+
+  <div id="gameUI" class="game-ui hidden">
+    <div id="topBar" class="topbar">
+      <div id="captureGauge" class="gauge">捕食: <span id="gaugeCount">0</span>/10</div>
+      <div id="timer">残り: 10:00</div>
+      <div id="roleIcon" class="role"></div>
+    </div>
+
+    <canvas id="gameCanvas" width="840" height="840"></canvas>
+
+    <div id="rightPanel" class="rightpanel">
+      <h4>チーム選択</h4>
+      <div id="teamButtons"></div>
+    </div>
+
+    <div id="chatStack" class="chatstack"></div>
+
+    <div id="miniMap" class="minimap"></div>
+  </div>
+
+  <!-- Firebase / App -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>
