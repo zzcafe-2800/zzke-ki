@@ -368,25 +368,6 @@ joinStrawBtn.addEventListener("click", async ()=>{
   await registerAs(name, "strawberry");
 });
 
-// register helper
-async function registerAs(name, role){
-  const id = nameToId(name);
-  const mapKey = "0,0";
-  await ensureCollisionMaskForMap(mapKey);
-  const spawn = randomSpawnOnMap(mapKey);
-  const playerDoc = {
-    id, name, role,
-    x: spawn.x, y: spawn.y,
-    mapX: spawn.mapX, mapY: spawn.mapY,
-    capturedBy: null, grabbedUntil: 0, stunnedUntil: 0, lastActive: Date.now()
-  };
-  await setDoc(doc(db, "rooms", ROOM_ID, "players", id), {
-    ...playerDoc, updatedAt: serverTimestamp()
-  });
-  localPlayer = playerDoc;
-  attachLocalListeners();
-  showLobbyWaiting();
-}
 
 // prevent duplicate entries on reload: we use fixed id per name, above
 
