@@ -906,7 +906,7 @@ window.addEventListener("beforeunload", async ()=>{
 })();
 
 // Utility: getDoc import used above
-import { getDoc } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+//☆import { getDoc } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
 // Small UI: toggle royal chat visible if user is king/guard
 function updateChatUI(){
