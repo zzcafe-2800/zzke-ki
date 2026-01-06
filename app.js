@@ -49,7 +49,7 @@ const ASSETS = {
   map: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
   footstep: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3",
   heartbeat: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3",
-  lowrumble: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3",
+  lowrumble: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp33",
   captureSE: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3"
 };
 const audioCache = {};
