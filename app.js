@@ -1,19 +1,16 @@
-// app.js - module
-// Prototype implementation using Firebase Firestore for realtime sync.
-// Features implemented:
-// - Lobby with name input and team selection (King limited to 1)
-// - Player movement (WASD), SPACE ability handling
-// - Roles: king, guard (hand), strawberry
-// - Vision masks, minimap, simple audio cues by distance
-// - Capture/respawn and guard grab/stun mechanics
-//
-// NOTES:
-// - This is a client-only prototype. Firestore security rules should be defined for production.
-// - Assets are referenced under the user's GitHub raw URL pattern as requested.
+// app.js - module (updated)
+// - Admin mode with password (1122) and admin-only start/stop/clear
+// - Asset URLs fixed to raw.githubusercontent.com
+// - No AI auto-creation
+// - Single entry per name (doc id is sanitized name) -> joining a new role overwrites previous
+// - "部下になる" directly starts the game locally for that client only (per request)
+// - When meta.started === true and the client hasn't started, show "現在待機中" on lobby
+// - Admin can clear all player docs
+// - Player grouping UI updated
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
 import {
-  getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, getDoc, addDoc, serverTimestamp
+  getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, getDocs, serverTimestamp, getDoc
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
 // --- Firebase init (from user's provided config) ---
@@ -31,31 +28,29 @@ const db = getFirestore(app);
 
 // --- Basic app state ---
 const ROOM_ID = "main_room"; // single room prototype
-let localPlayer = null; // {id, name, role, x,y,dir,...}
+let localPlayer = null; // {id=nameKey, name, role, x,y,...}
 const players = new Map(); // playerId -> playerData
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 const TILE_SIZE = 120; // visual scale for the simple map
-const MAP_W = 7, MAP_H = 7;
-const MAP_PX = canvas.width; // assume square
-const CENTER = {x: canvas.width/2, y: canvas.height/2};
 let lastTick = performance.now();
 let keys = {};
-let gameStarted = false;
+let localClientStarted = false; // local-only start state
+let globalGameStarted = false;  // meta.started from firestore
+let isAdmin = false;
 let captureCount = 0;
 let remainingTime = 10 * 60; // seconds
 
-// Asset base (as requested)
-const ASSET_BASE = "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png";
+// Asset base/URLs (fixed to loadable raw URLs as requested)
 const ASSETS = {
-  king: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
-  guard: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
-  strawberry: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
-  map: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
-  footstep: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3",
-  heartbeat: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3",
-  lowrumble: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3",
-  captureSE: ASSET_BASE + "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3"
+  king: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
+  guard: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
+  strawberry: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
+  map: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/p.png",
+  footstep: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3",
+  heartbeat: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3",
+  lowrumble: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3",
+  captureSE: "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/e.mp3"
 };
 const audioCache = {};
 function loadAudio(name, url){
@@ -66,7 +61,6 @@ function loadAudio(name, url){
 for (const k in ASSETS){
   if (ASSETS[k].endsWith(".mp3")) loadAudio(k, ASSETS[k]);
 }
-// Preload simple images
 const imgCache = {};
 function loadImg(name, url){
   const i = new Image();
@@ -83,23 +77,39 @@ const overlay = document.getElementById("overlay");
 const lobby = document.getElementById("lobby");
 const nameInput = document.getElementById("nameInput");
 const joinKingBtn = document.getElementById("joinKingBtn");
-const joinGuardBtn = document.getElementById("joinGuardBtn");
+const joinGuardBtn = document.getElementById("joinGuardBtn"); // immediate local start
+const joinGuardWaitBtn = document.getElementById("joinGuardWaitBtn"); // join & wait
 const joinStrawBtn = document.getElementById("joinStrawBtn");
 const enterGameBtn = document.getElementById("enterGameBtn");
-const playersList = document.getElementById("playersList");
+const groupKing = document.getElementById("groupKing");
+const groupGuard = document.getElementById("groupGuard");
+const groupStraw = document.getElementById("groupStraw");
 const gameUI = document.getElementById("gameUI");
 const gaugeCountEl = document.getElementById("gaugeCount");
 const timerEl = document.getElementById("timer");
 const chatStack = document.getElementById("chatStack");
 const miniMap = document.getElementById("miniMap");
+const adminPass = document.getElementById("adminPass");
+const adminDecide = document.getElementById("adminDecide");
+const adminBadge = document.getElementById("adminBadge");
+const adminControls = document.getElementById("adminControls");
+const startGameBtn = document.getElementById("startGameBtn");
+const stopGameBtn = document.getElementById("stopGameBtn");
+const clearAllBtn = document.getElementById("clearAllBtn");
+const waitingNotice = document.getElementById("waitingNotice");
 
 // --- Firestore helpers ---
 const playersCol = collection(db, "rooms", ROOM_ID, "players");
 const metaDoc = doc(db, "rooms", ROOM_ID, "meta", "state");
 
-// create local player in firestore
-async function enterRoom(name, roleWanted){
-  const id = crypto.randomUUID();
+// sanitize name -> key (doc id)
+function nameToId(name){
+  return name.trim().toLowerCase().replace(/\s+/g,"_").replace(/[^a-z0-9_\-]/g,"") || ("player_"+Math.floor(Math.random()*10000));
+}
+
+// create or update local player in firestore
+async function enterRoom(name, roleWanted, opts = {soloStart:false, wait:false}){
+  const id = nameToId(name);
   const startPos = randomSpawn();
   localPlayer = {
     id, name,
@@ -112,15 +122,26 @@ async function enterRoom(name, roleWanted){
     stunnedUntil: 0,
     lastActive: Date.now()
   };
+  // Always set/overwrite doc for this name (ensures single entry per name)
   await setDoc(doc(db, "rooms", ROOM_ID, "players", id), {
     ...localPlayer,
     updatedAt: serverTimestamp()
   });
   attachLocalListeners(id);
-  gameStarted = true;
-  overlay.classList.add("hidden");
-  gameUI.classList.remove("hidden");
-  startGameLoop();
+  // If opts.soloStart true -> start locally without setting meta.started
+  if (opts.soloStart){
+    localClientStarted = true;
+    showGameUI();
+    startGameLoop();
+  } else if (globalGameStarted){
+    // global started -> clients should enter game when player exists
+    localClientStarted = true;
+    showGameUI();
+    startGameLoop();
+  } else {
+    // not started -> remain in lobby, show waiting notice
+    showLobbyWaiting();
+  }
 }
 
 // Listen players collection
@@ -134,7 +155,30 @@ onSnapshot(playersCol, snapshot=>{
       players.set(pid, {...d, id:pid});
     }
   });
-  renderPlayersList();
+  renderPlayersGrouped();
+});
+
+// Listen meta changes
+onSnapshot(metaDoc, snap=>{
+  const data = snap.exists() ? snap.data() : {};
+  const started = !!data.started;
+  globalGameStarted = started;
+  // if global started and we have a local player, start if not started already
+  if (globalGameStarted){
+    if (localPlayer && !localClientStarted){
+      localClientStarted = true;
+      showGameUI();
+      startGameLoop();
+    } else {
+      // if not local player yet, show waiting overlay
+      showLobbyWaiting();
+    }
+  } else {
+    // game stopped globally; go back to lobby if local isn't solo-started
+    if (!localClientStarted){
+      showLobby();
+    }
+  }
 });
 
 // Remove local player on unload
@@ -148,44 +192,112 @@ window.addEventListener("beforeunload", async ()=>{
 enterGameBtn.addEventListener("click", async ()=>{
   const name = (nameInput.value || "").trim();
   if (!name) { alert("表示名を入力してください"); return; }
-  // default to strawberry role selection not forced here; user must click team buttons
-  overlay.classList.add("hidden");
-  // show team buttons in lobby style: we choose prompt rather than forcibly selecting
-  // We'll set localPlayer via join buttons; for quick enter choose strawberry
-  await enterRoom(name, "strawberry");
+  // join as spectator role selection not forced here; default strawberry wait
+  await enterRoom(name, "strawberry", {soloStart:false});
 });
+
 joinKingBtn.addEventListener("click", async ()=>{
   const name = (nameInput.value || "").trim();
   if (!name){ alert("表示名を入力してください"); return; }
   // check if another king exists
   const kingExists = Array.from(players.values()).some(p => p.role === "king");
   if (kingExists){ alert("王様は既にいます"); return; }
-  await enterRoom(name, "king");
+  // Join as king (wait for global start)
+  await enterRoom(name, "king", {soloStart:false});
 });
+
 joinGuardBtn.addEventListener("click", async ()=>{
   const name = (nameInput.value || "").trim();
   if (!name){ alert("表示名を入力してください"); return; }
-  await enterRoom(name, "guard");
+  // Pressing "部下になる" per request: this starts the game for this client immediately (solo)
+  await enterRoom(name, "guard", {soloStart:true});
 });
+
+joinGuardWaitBtn.addEventListener("click", async ()=>{
+  const name = (nameInput.value || "").trim();
+  if (!name){ alert("表示名を入力してください"); return; }
+  await enterRoom(name, "guard", {soloStart:false});
+});
+
 joinStrawBtn.addEventListener("click", async ()=>{
   const name = (nameInput.value || "").trim();
   if (!name){ alert("表示名を入力してください"); return; }
-  await enterRoom(name, "strawberry");
+  await enterRoom(name, "strawberry", {soloStart:false});
 });
 
-// Render player list in lobby
-function renderPlayersList(){
-  playersList.innerHTML = "";
-  for (const p of players.values()){
-    const li = document.createElement("li");
-    li.textContent = `${p.name} - ${p.role}`;
-    playersList.appendChild(li);
+// Admin password decide
+adminDecide.addEventListener("click", ()=>{
+  const pass = (adminPass.value || "").trim();
+  if (pass === "1122"){
+    isAdmin = true;
+    adminBadge.classList.remove("hidden");
+    adminControls.classList.remove("hidden");
+    adminPass.value = "";
+  } else {
+    alert("パスワードが違います");
   }
+});
+
+// Admin controls
+startGameBtn.addEventListener("click", async ()=>{
+  if (!isAdmin) return;
+  await setDoc(metaDoc, { started: true, startedAt: serverTimestamp() });
+});
+stopGameBtn.addEventListener("click", async ()=>{
+  if (!isAdmin) return;
+  await setDoc(metaDoc, { started: false, startedAt: serverTimestamp() });
+});
+clearAllBtn.addEventListener("click", async ()=>{
+  if (!isAdmin) return;
+  if (!confirm("本当に全データを削除しますか？（元に戻せません）")) return;
+  // delete all players docs
+  const snap = await getDocs(playersCol);
+  const promises = [];
+  snap.forEach(docSnap=>{
+    promises.push(deleteDoc(doc(db, "rooms", ROOM_ID, "players", docSnap.id)));
+  });
+  await Promise.all(promises);
+  // reset meta
+  await setDoc(metaDoc, { started: false, startedAt: serverTimestamp() });
+  alert("全データを削除しました");
+});
+
+// Helpers for showing UI states
+function showGameUI(){
+  overlay.classList.add("hidden");
+  gameUI.classList.remove("hidden");
+  waitingNotice.classList.add("hidden");
+}
+function showLobbyWaiting(){
+  overlay.classList.remove("hidden");
+  gameUI.classList.add("hidden");
+  waitingNotice.classList.remove("hidden");
+}
+function showLobby(){
+  overlay.classList.remove("hidden");
+  gameUI.classList.add("hidden");
+  waitingNotice.classList.add("hidden");
+}
+
+// Render grouped participants
+function renderPlayersGrouped(){
+  groupKing.innerHTML = "";
+  groupGuard.innerHTML = "";
+  groupStraw.innerHTML = "";
+  const arr = Array.from(players.values());
+  // Show ordered lists
+  arr.forEach(p=>{
+    const el = document.createElement("div");
+    el.textContent = p.name;
+    if (p.role === "king") groupKing.appendChild(el);
+    else if (p.role === "guard") groupGuard.appendChild(el);
+    else groupStraw.appendChild(el);
+  });
 }
 
 // Helper: random spawn within map bounds (normalized 0..1)
 function randomSpawn(){
-  const margin = 0.1;
+  const margin = 0.08;
   return {
     x: Math.random()*(1-2*margin) + margin,
     y: Math.random()*(1-2*margin) + margin
@@ -206,24 +318,39 @@ function attachLocalListeners(id){
 
 // ROLE PARAMETERS
 const ROLE_PARAMS = {
-  king: {speed: 0.9, viewRadius: 0.18, visionPixels: 180},
+  king: {speed: 0.9, viewRadius: 0.18, visionPixels: 140},
   guard: {speed: 1.6, viewRadius: 1.0, visionPixels: 1000},
   strawberry: {speed: 1.8, viewRadius: 0.22, visionPixels: 160}
 };
 
 // Game loop
+let tickRaf = null;
 function startGameLoop(){
+  if (tickRaf) return; // already running
   lastTick = performance.now();
-  requestAnimationFrame(tick);
-  // start timer countdown
-  setInterval(()=>{
-    if (!gameStarted) return;
-    remainingTime = Math.max(0, remainingTime-1);
-    updateTimerUI();
-    if (remainingTime === 0) {
-      endGame("strawberry"); // strawberries win if time up
-    }
-  }, 1000);
+  tickRaf = requestAnimationFrame(tick);
+  // start timer countdown if not already
+  if (!globalGameStarted && localClientStarted){
+    // local-only start: timer runs locally
+    setInterval(()=>{
+      if (!localClientStarted) return;
+      remainingTime = Math.max(0, remainingTime-1);
+      updateTimerUI();
+      if (remainingTime === 0) {
+        endGame("strawberry");
+      }
+    }, 1000);
+  } else if (globalGameStarted){
+    // a global timer might be set by meta; for prototype keep local countdown too
+    setInterval(()=>{
+      if (!localClientStarted) return;
+      remainingTime = Math.max(0, remainingTime-1);
+      updateTimerUI();
+      if (remainingTime === 0) {
+        endGame("strawberry");
+      }
+    }, 1000);
+  }
 }
 
 function updateTimerUI(){
@@ -235,11 +362,10 @@ function updateTimerUI(){
 async function tick(now){
   const dt = Math.min(0.1, (now-lastTick)/1000);
   lastTick = now;
-  if (localPlayer && gameStarted){
+  if (localPlayer && localClientStarted){
     // movement
     const role = localPlayer.role;
     const params = ROLE_PARAMS[role] || ROLE_PARAMS.strawberry;
-    // check disabled states
     const nowMs = Date.now();
     const stunned = localPlayer.stunnedUntil && nowMs < localPlayer.stunnedUntil;
     const grabbed = localPlayer.capturedBy && localPlayer.capturedBy !== "";
@@ -252,8 +378,8 @@ async function tick(now){
       const len = Math.hypot(vx,vy);
       if (len>0){
         vx/=len;vy/=len;
-        localPlayer.x = clamp01(localPlayer.x + vx * params.speed * dt * 0.1);
-        localPlayer.y = clamp01(localPlayer.y + vy * params.speed * dt * 0.1);
+        localPlayer.x = clamp01(localPlayer.x + vx * params.speed * dt * 0.12);
+        localPlayer.y = clamp01(localPlayer.y + vy * params.speed * dt * 0.12);
         localPlayer.lastActive = Date.now();
         // update Firestore
         setDoc(doc(db, "rooms", ROOM_ID, "players", localPlayer.id), {
@@ -262,15 +388,11 @@ async function tick(now){
         }).catch(console.warn);
       }
     }
-    // periodic heartbeat update
-    if (Math.random() < 0.02){
-      updateDoc(doc(db, "rooms", ROOM_ID, "players", localPlayer.id), { lastActive: Date.now() }).catch(()=>{});
-    }
   }
 
   renderScene();
 
-  requestAnimationFrame(tick);
+  tickRaf = requestAnimationFrame(tick);
 }
 
 function clamp01(v){ return Math.max(0, Math.min(1, v)); }
@@ -282,30 +404,19 @@ function renderScene(){
   if (imgCache.map && imgCache.map.complete){
     ctx.drawImage(imgCache.map, 0, 0, canvas.width, canvas.height);
   } else {
-    // placeholder
     ctx.fillStyle = "#0b3";
     ctx.fillRect(0,0,canvas.width,canvas.height);
   }
 
-  // draw players (only those permitted to be visible depending on role)
-  // Determine viewer: localPlayer
-  const viewer = localPlayer;
-  // Collect arrays for different rendering passes
+  // draw players
   const allPlayers = Array.from(players.values());
-
-  // draw player markers (but for strawberry viewers, we must hide strawberry positions)
   for (const p of allPlayers){
     if (!p) continue;
-    // draw only certain info on mini-map
-    // main canvas: show all characters for debugging; but enforce vision: strawberries shouldn't see others far
-    // We'll implement vision mask separately
     const px = p.x * canvas.width;
     const py = p.y * canvas.height;
-    // choose icon
     let icon = imgCache.straw;
     if (p.role === "king") icon = imgCache.king;
     if (p.role === "guard") icon = imgCache.guard;
-
     const size = (p.role === "king") ? 28 : 20;
     if (icon && icon.complete){
       ctx.drawImage(icon, px - size/2, py - size/2, size, size);
@@ -316,23 +427,18 @@ function renderScene(){
   }
 
   // vision mask for viewer
-  if (viewer){
+  const viewer = localPlayer;
+  if (viewer && localClientStarted){
     const role = viewer.role;
-    if (role === "guard"){
-      // guard sees all -> no mask
-    } else {
-      // darken whole screen then cut a circle near viewer or guard's target (for guard when stunned etc)
+    if (role !== "guard"){
       ctx.save();
       ctx.fillStyle = "rgba(0,0,0,0.85)";
       ctx.fillRect(0,0,canvas.width,canvas.height);
-
-      // compute radius in px from role's parameter
       const params = ROLE_PARAMS[role] || ROLE_PARAMS.strawberry;
       const radiusPx = params.visionPixels;
       const cx = viewer.x * canvas.width;
       const cy = viewer.y * canvas.height;
       ctx.globalCompositeOperation = "destination-out";
-      // soft gradient circle
       const g = ctx.createRadialGradient(cx,cy,Math.max(1,radiusPx*0.3), cx,cy,radiusPx);
       g.addColorStop(0,"rgba(0,0,0,1)");
       g.addColorStop(0.6,"rgba(0,0,0,0.6)");
@@ -348,7 +454,7 @@ function renderScene(){
   // update capture gauge UI
   gaugeCountEl.textContent = captureCount;
 
-  // update minimap (for guard & king show others)
+  // update minimap
   miniMap.innerHTML = "";
   if (viewer){
     const mapCanvas = document.createElement("canvas");
@@ -356,7 +462,6 @@ function renderScene(){
     const mctx = mapCanvas.getContext("2d");
     mctx.fillStyle = "#222";
     mctx.fillRect(0,0,140,140);
-    // draw players visible to minimap: guards and king see others, strawberries don't see positions
     if (viewer.role === "guard" || viewer.role === "king"){
       for (const p of players.values()){
         if (!p) continue;
@@ -366,7 +471,6 @@ function renderScene(){
         mctx.fillRect(mx-3,my-3,6,6);
       }
     } else {
-      // strawberry sees only noise or nothing on minimap
       mctx.fillStyle = "#00000099";
       mctx.fillRect(0,0,140,140);
     }
@@ -375,74 +479,75 @@ function renderScene(){
 }
 
 // Ability handling SPACE
+let guardGrabIntervals = new Map(); // strawId -> intervalId
 async function handleAbility(){
-  if (!localPlayer) return;
+  if (!localPlayer || !localClientStarted) return;
   const now = Date.now();
 
   if (localPlayer.stunnedUntil && now < localPlayer.stunnedUntil) return; // cannot use
   if (localPlayer.capturedBy) return; // cannot use
 
   if (localPlayer.role === "king") {
-    // perform capture in radius
     const radius = 0.12; // normalized
-    // find strawberries within radius
     for (const p of players.values()){
       if (!p) continue;
       if (p.role !== "strawberry") continue;
       const d = dist(localPlayer, p);
       if (d <= radius){
-        // capture: remove strawberry doc and respawn it
-        try {
-          await deleteDoc(doc(db, "rooms", ROOM_ID, "players", p.id));
-        } catch(e){ console.warn(e); }
-        // spawn new strawberry player doc
+        // Capture: teleport the strawberry to a random safe place (do NOT delete their doc)
         const newPos = randomSpawn();
-        const newId = crypto.randomUUID();
-        await setDoc(doc(db, "rooms", ROOM_ID, "players", newId), {
-          id: newId,
-          name: p.name,
-          role: "strawberry",
+        await updateDoc(doc(db, "rooms", ROOM_ID, "players", p.id), {
           x: newPos.x,
           y: newPos.y,
-          dir: 0,
           capturedBy: null,
           grabbedUntil: 0,
-          stunnedUntil: 0,
-          lastActive: Date.now(),
           updatedAt: serverTimestamp()
-        });
+        }).catch(console.warn);
         captureCount = captureCount + 1;
         gaugeCountEl.textContent = captureCount;
-        // play capture sound
         if (audioCache.captureSE) { audioCache.captureSE.currentTime = 0; audioCache.captureSE.play().catch(()=>{}); }
         if (captureCount >= 10){
+          await setDoc(metaDoc, { started: false, winner: "king", endedAt: serverTimestamp() });
           endGame("king");
         }
-        break; // first-come: only capture first
+        break; // only first match
       }
     }
   } else if (localPlayer.role === "guard") {
-    // attempt to grab a strawberry within radius
     const grabRadius = 0.06;
     for (const p of players.values()){
       if (!p) continue;
       if (p.role !== "strawberry") continue;
       const d = dist(localPlayer, p);
       if (d <= grabRadius){
-        // set strawberry.capturedBy = guardId and grabbedUntil
         const grabbedForMs = 5000;
         const stunMs = 15000;
         const strawRef = doc(db, "rooms", ROOM_ID, "players", p.id);
+        // set capturedBy and grabbedUntil
         await updateDoc(strawRef, {
           capturedBy: localPlayer.id,
-          grabbedUntil: Date.now()+grabbedForMs
+          grabbedUntil: Date.now()+grabbedForMs,
+          updatedAt: serverTimestamp()
         }).catch(console.warn);
-        // move strawberry along with guard - we will update strawberry position in tick via watchers (simple approach is to keep strawberry's position on guard's client)
-        // apply stun to guard after grab time
+        // start interval to update strawberry position to guard while grabbed (this guard client is authoritative for movement during grab)
+        const intervalId = setInterval(async ()=>{
+          // push current guard position onto strawberry doc
+          const guardDocRef = doc(db, "rooms", ROOM_ID, "players", localPlayer.id);
+          // get latest guard position from local cache (localPlayer)
+          await updateDoc(strawRef, {
+            x: localPlayer.x,
+            y: localPlayer.y,
+            updatedAt: serverTimestamp()
+          }).catch(()=>{});
+        }, 200);
+        guardGrabIntervals.set(p.id, intervalId);
+
+        // release after grabbedForMs
         setTimeout(async ()=>{
-          // after 5s: release strawberry
-          await updateDoc(strawRef, { capturedBy: null, grabbedUntil: 0 }).catch(()=>{});
-          // stun guard
+          clearInterval(guardGrabIntervals.get(p.id));
+          guardGrabIntervals.delete(p.id);
+          await updateDoc(strawRef, { capturedBy: null, grabbedUntil: 0, updatedAt: serverTimestamp() }).catch(()=>{});
+          // apply stun to guard locally and persist
           localPlayer.stunnedUntil = Date.now() + stunMs;
           await setDoc(doc(db, "rooms", ROOM_ID, "players", localPlayer.id), {
             ...localPlayer,
@@ -453,7 +558,6 @@ async function handleAbility(){
       }
     }
   } else if (localPlayer.role === "strawberry") {
-    // strawberries have no active ability; perhaps panic/scream? We'll push a chat message to nearby hand/king channels
     pushLocalChat(`${localPlayer.name} が SPACE を押した`);
   }
 }
@@ -476,28 +580,14 @@ function pushLocalChat(text){
 
 // End game
 function endGame(winnerRole){
-  gameStarted = false;
+  localClientStarted = false;
+  globalGameStarted = false;
   alert(`ゲーム終了: 勝者 = ${winnerRole}`);
-  // Clear room local state (in prototype we won't delete other players automatically)
+  // Return to lobby overlay
+  showLobby();
+  // Reset some local states
+  // (global meta already set by admin/start logic)
 }
-
-// Listen to remote updates to apply special effects like grabbed strawberry following guard
-onSnapshot(playersCol, snapshot=>{
-  snapshot.docChanges().forEach(ch=>{
-    const p = ch.doc.data();
-    if (!p) return;
-    const pid = ch.doc.id;
-    // If strawberry is captured by guard, and guard exists locally in players map, we move strawberry's stored position to guard's position
-    if (p.role === "strawberry" && p.capturedBy){
-      const captor = players.get(p.capturedBy);
-      if (captor){
-        // set strawberry position equal to captor
-        // if local strawberry is the captured one, we reflect the movement locally by updating firestore from the captor's client during movement (simple approach)
-        // We'll let the captor update strawberry doc position periodically by setting pos on strawberry doc (not implementing full authoritative behavior here)
-      }
-    }
-  });
-});
 
 // SOUND / FEAR AE: For strawberry players, play audio cues according to nearest enemy distance
 setInterval(()=>{
@@ -510,12 +600,9 @@ setInterval(()=>{
     if (p.role === "strawberry") continue;
     nearest = Math.min(nearest, dist(localPlayer, p));
   }
-  // convert normalized distance to meters (assume 15m is full screen diagonal as user requested: map scale)
   const meters = nearest * 15;
-  // choose audio state
   if (meters <= 3){
-    playAudioLoop('lowrumble', 1.0); // heavy
-    // small camera shake
+    playAudioLoop('lowrumble', 1.0);
     shakeCanvas(8);
   } else if (meters <= 6){
     playAudioLoop('heartbeat', 0.9);
@@ -545,38 +632,31 @@ function stopAudioLoop(){
   }
 }
 function shakeCanvas(amount){
-  // simple CSS transform shake
   canvas.style.transform = `translate(${(Math.random()-0.5)*amount}px, ${(Math.random()-0.5)*amount}px)`;
   setTimeout(()=>{ canvas.style.transform = ""; }, 120);
 }
 
-// Basic collision / respawn handling: if king captures a strawberry we already delete and respawn
-// Additional behaviors like ensuring respawn location is not too close to king implemented client-side on spawn
+// Utility to fetch current players once (used by some flows)
+async function fetchPlayersSnapshot(){
+  const snap = await getDocs(playersCol);
+  const map = new Map();
+  snap.forEach(s=>{
+    map.set(s.id, {...s.data(), id:s.id});
+  });
+  return map;
+}
 
-// For demonstration, create a few AI strawberries if room empty (local-only fallback)
-async function ensureSomePlayers(){
-  const snap = await (await fetchPlayersOnce());
-  if (snap.size === 0){
-    // create 6 strawberries to make game lively (only if you're testing locally using same Firebase project)
-    for (let i=0;i<6;i++){
-      const id = crypto.randomUUID();
-      const pos = randomSpawn();
-      await setDoc(doc(db, "rooms", ROOM_ID, "players", id), {
-        id, name: `AI_${i+1}`, role: "strawberry", x: pos.x, y: pos.y,
-        capturedBy: null, grabbedUntil:0, stunnedUntil:0, lastActive: Date.now(),
-        updatedAt: serverTimestamp()
-      });
-    }
+// Initialization: read meta once to show waiting if necessary
+(async function init(){
+  const metaSnap = await getDoc(metaDoc);
+  const started = metaSnap.exists() && metaSnap.data().started;
+  globalGameStarted = !!started;
+  if (globalGameStarted){
+    // show waiting overlay until player joins or admin starts/they solo-start
+    showLobbyWaiting();
+  } else {
+    showLobby();
   }
-}
-async function fetchPlayersOnce(){
-  // lightweight snapshot using REST is complex; instead use getDoc on meta or read players via onSnapshot first time
-  // But for simplicity return a Map from current 'players' map
-  return players;
-}
+})();
 
-// Kickoff: ensure some players on an empty room (optional)
-ensureSomePlayers().catch(()=>{});
-
-// The end of app.js
-console.log("Prototype loaded. Open the page, enter your name, and join a team.");
+console.log("Prototype updated and loaded.");
