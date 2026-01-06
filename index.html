@@ -16,13 +16,13 @@
 
       <div class="teams">
         <div>
-          <h3>👑 主役チーム</h3>
-          <button id="joinKingBtn">＋ 王になる（待機）</button>
-          <button id="joinGuardBtn">＋ 部下になる（待機）</button>
+          <h3 style="background:#ffd66b;padding:6px;border-radius:6px">👑 主役チーム</h3>
+          <button id="joinKingBtn">＋ 王になる（待機登録）</button>
+          <button id="joinGuardBtn">＋ 部下になる（待機登録）</button>
         </div>
         <div>
-          <h3>🍓 イチゴチーム</h3>
-          <button id="joinStrawBtn">＋ イチゴになる（待機）</button>
+          <h3 style="background:#ff6b9a;padding:6px;border-radius:6px">🍓 イチゴチーム</h3>
+          <button id="joinStrawBtn">＋ イチゴになる（待機登録）</button>
         </div>
       </div>
 
@@ -58,24 +58,13 @@
       </div>
 
       <div id="lobbyButtons">
-        <button id="enterGameBtn">入室（名前必須・待機）</button>
+        <!-- 入室ボタンは廃止しました（役割ボタンで登録） -->
       </div>
 
       <div id="waitingNotice" class="waitingNotice hidden">
         <strong>現在待機中</strong>
-        <p>ゲームは運営モードの開始ボタンを押すまで始まりません。</p>
+        <p>ゲームは運営が開始ボタンを押すまで始まりません。</p>
       </div>
-
-    <div id="rightPanel" class="rightpanel">
-      <h4>チーム操作（運営用）</h4>
-      <div id="adminControls" class="adminControls hidden">
-        <button id="startGameBtn">運営: ゲーム開始</button>
-        <button id="stopGameBtn">運営: ゲーム停止</button>
-        <button id="clearAllBtn">運営: 全データ削除</button>
-      </div>
-      <div id="teamButtons"></div>
-    </div>
-      
     </div>
   </div>
 
@@ -88,7 +77,13 @@
 
     <canvas id="gameCanvas" width="840" height="840"></canvas>
 
-
+    <div id="rightPanel" class="rightpanel">
+      <h4>運営コントロール（ロビー／ゲーム両方で表示）</h4>
+      <div id="adminControls" class="adminControls hidden">
+        <button id="startGameBtn">運営: ゲーム開��</button>
+        <button id="clearAllBtn">運営: 全データ削除</button>
+      </div>
+    </div>
 
     <div id="chatStack" class="chatstack"></div>
 
