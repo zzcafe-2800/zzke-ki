@@ -763,9 +763,9 @@ async function handleAbility(){
 }
 
 // Utility: safe updateDoc wrapper
-async function updateDocSafe(ref, data){
-  try { await updateDoc(ref, data); } catch(e){ try { await setDoc(ref, data, { merge:true }); } catch(e2){ } }
-}
+// async function updateDocSafe(ref, data){
+ //  try { await updateDoc(ref, data); } catch(e){ try { await setDoc(ref, data, { merge:true }); } catch(e2){ } }
+// }
 
 // Render players grouped (UI list)
 function renderPlayersGrouped(){
