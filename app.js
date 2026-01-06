@@ -368,18 +368,25 @@ joinStrawBtn.addEventListener("click", async ()=>{
   await registerAs(name, "strawberry");
 });
 
-// register helper async function registerAs(name, role)
-
-
-// { const id = nameToId(name); 
-// const mapKey = "0,0"; 
-// await ensureCollisionMaskForMap(mapKey);
-// const spawn = randomSpawnOnMap(mapKey); 
-// const playerDoc = { id, name, role, x: spawn.x, y: spawn.y, mapX: spawn.mapX, mapY: spawn.mapY, capturedBy: null, grabbedUntil: 0, stunnedUntil: 0, lastActive: Date.now() }; 
-// await setDoc(doc(db, "rooms", ROOM_ID, "players", id), { ...playerDoc, updatedAt: serverTimestamp() }); 
-// localPlayer = playerDoc; attachLocalListeners(); showLobbyWaiting(); }
-
-
+// register helper
+async function registerAs(name, role){
+  const id = nameToId(name);
+  const mapKey = "0,0";
+  await ensureCollisionMaskForMap(mapKey);
+  const spawn = randomSpawnOnMap(mapKey);
+  const playerDoc = {
+    id, name, role,
+    x: spawn.x, y: spawn.y,
+    mapX: spawn.mapX, mapY: spawn.mapY,
+    capturedBy: null, grabbedUntil: 0, stunnedUntil: 0, lastActive: Date.now()
+  };
+  await setDoc(doc(db, "rooms", ROOM_ID, "players", id), {
+    ...playerDoc, updatedAt: serverTimestamp()
+  });
+  localPlayer = playerDoc;
+  attachLocalListeners();
+  showLobbyWaiting();
+}
 
 // prevent duplicate entries on reload: we use fixed id per name, above
 
@@ -775,9 +782,9 @@ async function handleAbility(){
 }
 
 // Utility: safe updateDoc wrapper
-// async function updateDocSafe(ref, data){
- //  try { await updateDoc(ref, data); } catch(e){ try { await setDoc(ref, data, { merge:true }); } catch(e2){ } }
-// }
+async function updateDocSafe(ref, data){
+  try { await updateDoc(ref, data); } catch(e){ try { await setDoc(ref, data, { merge:true }); } catch(e2){ } }
+}
 
 // Render players grouped (UI list)
 function renderPlayersGrouped(){
@@ -906,7 +913,7 @@ window.addEventListener("beforeunload", async ()=>{
 })();
 
 // Utility: getDoc import used above
-//☆import { getDoc } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+import { getDoc } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
 // Small UI: toggle royal chat visible if user is king/guard
 function updateChatUI(){
