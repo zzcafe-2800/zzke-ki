@@ -65,6 +65,17 @@
         <strong>現在待機中</strong>
         <p>ゲームは運営モードの開始ボタンを押すまで始まりません。</p>
       </div>
+
+    <div id="rightPanel" class="rightpanel">
+      <h4>チーム操作（運営用）</h4>
+      <div id="adminControls" class="adminControls hidden">
+        <button id="startGameBtn">運営: ゲーム開始</button>
+        <button id="stopGameBtn">運営: ゲーム停止</button>
+        <button id="clearAllBtn">運営: 全データ削除</button>
+      </div>
+      <div id="teamButtons"></div>
+    </div>
+      
     </div>
   </div>
 
@@ -77,15 +88,7 @@
 
     <canvas id="gameCanvas" width="840" height="840"></canvas>
 
-    <div id="rightPanel" class="rightpanel">
-      <h4>チーム操作（運営用）</h4>
-      <div id="adminControls" class="adminControls hidden">
-        <button id="startGameBtn">運営: ゲーム開始</button>
-        <button id="stopGameBtn">運営: ゲーム停止</button>
-        <button id="clearAllBtn">運営: 全データ削除</button>
-      </div>
-      <div id="teamButtons"></div>
-    </div>
+
 
     <div id="chatStack" class="chatstack"></div>
 
