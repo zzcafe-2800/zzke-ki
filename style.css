@@ -23,4 +23,11 @@ button[disabled]{opacity:.4;cursor:not-allowed}
 .chatstack{position:fixed;right:12px;bottom:12px;width:240px;max-height:320px;overflow:hidden}
 .chatstack .chat{background:#00000088;padding:6px;margin-bottom:6px;border-radius:6px;opacity:.9}
 .minimap{position:fixed;right:12px;top:12px;width:140px;height:140px;background:#00000066;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff}
-.role{width:40px;height:40px;background:#222;border-radius:50%}
+
+.group{margin-top:8px}
+.groupTitle{font-weight:700;color:#ffd2e0}
+.groupList{margin-left:8px;color:#dfe}
+.adminRow{margin-top:12px;display:flex;gap:8px;align-items:center}
+.adminRow input{padding:6px;border-radius:6px;border:1px solid #333;background:transparent;color:var(--text)}
+.adminBadge{background:#ffd700;color:#222;padding:4px 8px;border-radius:6px;font-weight:700;margin-left:8px}
+.waitingNotice{margin-top:12px;background:#11111166;padding:8px;border-radius:6px}
