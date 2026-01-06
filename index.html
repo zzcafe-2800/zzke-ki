@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ストロベリー・エスケープ：王の祝宴 - Prototype</title>
+  <title>ストロベリー・エスケープ：王の祝宴 - 完全版プロトタイプ</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -12,37 +12,48 @@
     <div id="lobby" class="panel">
       <h1>ストロベリー・エスケープ：王の祝宴</h1>
 
-      <label>表示名: <input id="nameInput" placeholder="名前を入力 (重複不可)" /></label>
+      <div class="row">
+        <label class="nameLabel">表示名:
+          <input id="nameInput" placeholder="名前を入力 (重複不可)" />
+        </label>
 
-      <div class="teams">
-        <div>
-          <h3 style="background:#ffd66b;padding:6px;border-radius:6px">👑 主役チーム</h3>
-          <button id="joinKingBtn">＋ 王になる（待機登録）</button>
-          <button id="joinGuardBtn">＋ 部下になる（待機登録）</button>
-        </div>
-        <div>
-          <h3 style="background:#ff6b9a;padding:6px;border-radius:6px">🍓 イチゴチーム</h3>
-          <button id="joinStrawBtn">＋ イチゴになる（待機登録）</button>
+        <div class="adminRow">
+          <input id="adminPass" placeholder="運営パスワード" />
+          <button id="adminDecide">決定</button>
+          <div id="adminBadge" class="adminBadge hidden">運営モード</div>
         </div>
       </div>
 
-      <div class="participants">
+      <div class="teams">
+        <div class="teamCol">
+          <h3 class="teamHeader teamKing">👑 主役チーム</h3>
+          <div class="teamButtons">
+            <button id="joinKingBtn">＋ 王になる（待機登録）</button>
+            <button id="joinGuardBtn">＋ 部下になる（待機登録）</button>
+          </div>
+        </div>
+        <div class="teamCol">
+          <h3 class="teamHeader teamStraw">🍓 イチゴチーム</h3>
+          <div class="teamButtons">
+            <button id="joinStrawBtn">＋ イチゴになる（待機登録）</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="participants big">
         <h4>参加者一覧</h4>
-        <div id="playersGrouped">
-          <!-- 王 -->
-          <div class="group">
+        <div id="playersGrouped" class="playersGrouped">
+          <div class="groupBox">
             <div class="groupTitle">王</div>
-            <div id="groupKing" class="groupList"></div>
+            <div id="groupKing" class="groupList horizontal"></div>
           </div>
-          <!-- 部下 -->
-          <div class="group">
+          <div class="groupBox">
             <div class="groupTitle">部下</div>
-            <div id="groupGuard" class="groupList"></div>
+            <div id="groupGuard" class="groupList horizontal"></div>
           </div>
-          <!-- イチゴ -->
-          <div class="group">
+          <div class="groupBox">
             <div class="groupTitle">イチゴ</div>
-            <div id="groupStraw" class="groupList"></div>
+            <div id="groupStraw" class="groupList horizontal"></div>
           </div>
         </div>
       </div>
@@ -51,29 +62,15 @@
         <p>操作: WASD 移動 / SPACE 能力使用</p>
       </div>
 
-      <div class="adminRow">
-        <input id="adminPass" placeholder="運営パスワード" />
-        <button id="adminDecide">決定</button>
-        <div id="adminBadge" class="adminBadge hidden">運営モード</div>
-      </div>
-
-      <div id="lobbyButtons">
-        <!-- 入室ボタンは廃止しました（役割ボタンで登録） -->
-      </div>
-
       <div id="waitingNotice" class="waitingNotice hidden">
         <strong>現在待機中</strong>
         <p>ゲームは運営が開始ボタンを押すまで始まりません。</p>
       </div>
 
-  <div id="rightPanel" class="rightpanel">
-      <h4>運営コントロール（ロビー／ゲーム両方で表示）</h4>
-      <div id="adminControls" class="adminControls hidden">
-        <button id="startGameBtn">運営: ゲーム開��</button>
-        <button id="clearAllBtn">運営: 全データ削除</button>
+      <div class="adminControlsSmall hidden" id="adminControlsSmall">
+        <button id="startGameBtn_small">運営: ゲーム開始</button>
+        <button id="clearAllBtn_small">運営: 全データ削除</button>
       </div>
-    </div>
-      
     </div>
   </div>
 
@@ -82,18 +79,29 @@
       <div id="captureGauge" class="gauge">捕食: <span id="gaugeCount">0</span>/10</div>
       <div id="timer">残り: 10:00</div>
       <div id="roleIcon" class="role"></div>
+      <div id="royalChatToggle" class="royalChatToggle hidden">王/部下チャット</div>
     </div>
 
     <canvas id="gameCanvas" width="840" height="840"></canvas>
 
-  
+    <div id="rightPanel" class="rightpanel">
+      <div id="adminControls" class="adminControls hidden">
+        <button id="startGameBtn">運営: ゲーム開始</button>
+        <button id="clearAllBtn">運営: 全データ削除</button>
+      </div>
 
-    <div id="chatStack" class="chatstack"></div>
+      <div id="teamChat" class="teamChat hidden">
+        <div id="chatMessages" class="chatMessages"></div>
+        <input id="chatInput" placeholder="王/部下チャット" />
+        <button id="chatSend">送信</button>
+      </div>
 
-    <div id="miniMap" class="minimap"></div>
+      <div id="miniMap" class="minimap"></div>
+    </div>
+
+    <div id="worldOverlay" class="worldOverlay"></div>
   </div>
 
-  <!-- Firebase / App -->
   <script type="module" src="app.js"></script>
 </body>
 </html>
