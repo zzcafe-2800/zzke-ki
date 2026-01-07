@@ -10,24 +10,24 @@
 // - 画面が動作しない（クリック無反応）主要原因として、同名関数再定義や DOM セレクタ不一致、overlay の表示制御不整合を潰しました。
 // できるだけ既存機能を変えず、バグの原因になっていた箇所を直しています。
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
-import {
-  getFirestore, collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc,
-  getDocs, serverTimestamp, getDoc, increment
-} from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+ // Import the functions you need from the SDKs you need
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-analytics.js";
+  // TODO: Add SDKs for Firebase products that you want to use
+ // https://firebase.google.com/docs/web/setup#available-libraries
 
 // Firebase config (provided)
-const firebaseConfig = {
-  apiKey: "AIzaSyAcDEj5VPQmzekn-njX4YV33_80mdUv_os",
-  authDomain: "zzke-ki.firebaseapp.com",
-  projectId: "zzke-ki",
-  storageBucket: "zzke-ki.firebasestorage.app",
-  messagingSenderId: "155414272080",
-  appId: "1:155414272080:web:f1f0f01c118e5dfbe29955",
-  measurementId: "G-RHYBY3SBKH"
-};
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+  const firebaseConfig = {
+    apiKey: "AIzaSyBmgtx4FW_3_0zy1MvAvZLPHmE_CE1txuE",
+    authDomain: "zzke-ki1.firebaseapp.com",
+    projectId: "zzke-ki1",
+    storageBucket: "zzke-ki1.firebasestorage.app",
+    messagingSenderId: "260981230516",
+    appId: "1:260981230516:web:146a29f15b2716a9af80e1",
+    measurementId: "G-GF5G1D4E10"
+  };
+  const app = initializeApp(firebaseConfig);
+  const analytics = getAnalytics(app);
 
 // DOM elements (guarded)
 const q = id => document.getElementById(id);
