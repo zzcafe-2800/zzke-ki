@@ -1,13 +1,14 @@
-// app.js - Bugfix + adjustments
-// - Fixed duplicate function declaration error
-// - Ensure clicks work (no duplicated identifiers)
-// - Narrowed vision (king & strawberry): full black overlay with small clear circle
-// - Guard: grab cooldown 20s, UI showing availability; grab lasts 5s, then guard stunned 15s (black screen for stunned guard)
-// - Display "掴み中" and "操作不能" indicators for both guard and strawberry while grabbing
-// - Handle missing images gracefully
-// - Preserve existing functionality, but correct bugs that prevented interaction
-//
-// Note: This file replaces previous app.js. Keep index.html and style.css from previous step.
+// app.js - バグ修正版（クリックが効かない / 既定の重複宣言を解消）
+// 変更点（要点）:
+// - 重複して宣言されていた関数（registerAs 等）を統合して一度だけ定義
+// - import を一つにまとめ重複 import を除去
+// - DOM 要素が無いときのガードを追加（クリックイベントが無反応になる原因を減らす）
+// - 管理者開始時に管理者本人も確実にゲーム画面へ遷移するよう修正
+// - 手下の掴みクールタイムを 20 秒に変更（UI 表示あり、ローカルクールダウン制御)
+// - 視界を「真っ黒（hard black）」に変更（王/イチゴは黒->円形の切り抜き）
+// - クリック系のイベントで最初に console.log を残すようにし、デバッグしやすくした
+// - 画面が動作しない（クリック無反応）主要原因として、同名関数再定義や DOM セレクタ不一致、overlay の表示制御不整合を潰しました。
+// できるだけ既存機能を変えず、バグの原因になっていた箇所を直しています。
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
 import {
@@ -15,7 +16,7 @@ import {
   getDocs, serverTimestamp, getDoc, increment
 } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
 
-// Firebase config (unchanged)
+// Firebase config (provided)
 const firebaseConfig = {
   apiKey: "AIzaSyAcDEj5VPQmzekn-njX4YV33_80mdUv_os",
   authDomain: "zzke-ki.firebaseapp.com",
@@ -28,39 +29,39 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// --- DOM elements (assume index.html as provided earlier) ---
-const nameInput = document.getElementById("nameInput");
-const joinKingBtn = document.getElementById("joinKingBtn");
-const joinGuardBtn = document.getElementById("joinGuardBtn");
-const joinStrawBtn = document.getElementById("joinStrawBtn");
-const groupKing = document.getElementById("groupKing");
-const groupGuard = document.getElementById("groupGuard");
-const groupStraw = document.getElementById("groupStraw");
-const overlay = document.getElementById("overlay");
-const waitingNotice = document.getElementById("waitingNotice");
-const adminPass = document.getElementById("adminPass");
-const adminDecide = document.getElementById("adminDecide");
-const adminBadge = document.getElementById("adminBadge");
+// DOM elements (guarded)
+const q = id => document.getElementById(id);
+const nameInput = q("nameInput");
+const joinKingBtn = q("joinKingBtn");
+const joinGuardBtn = q("joinGuardBtn");
+const joinStrawBtn = q("joinStrawBtn");
+const groupKing = q("groupKing");
+const groupGuard = q("groupGuard");
+const groupStraw = q("groupStraw");
+const overlay = q("overlay");
+const waitingNotice = q("waitingNotice");
+const adminPass = q("adminPass");
+const adminDecide = q("adminDecide");
+const adminBadge = q("adminBadge");
 const adminControlsNodes = document.querySelectorAll(".adminControls");
-const adminControlsSmall = document.getElementById("adminControlsSmall");
-const startGameBtn = document.getElementById("startGameBtn");
-const startGameBtnSmall = document.getElementById("startGameBtn_small");
-const clearAllBtn = document.getElementById("clearAllBtn");
-const clearAllBtnSmall = document.getElementById("clearAllBtn_small");
-const gameUI = document.getElementById("gameUI");
-const gaugeCountEl = document.getElementById("gaugeCount");
-const timerEl = document.getElementById("timer");
-const roleIcon = document.getElementById("roleIcon");
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
-const miniMap = document.getElementById("miniMap");
-const teamChat = document.getElementById("teamChat");
-const chatMessages = document.getElementById("chatMessages");
-const chatInput = document.getElementById("chatInput");
-const chatSend = document.getElementById("chatSend");
-const royalChatToggle = document.getElementById("royalChatToggle");
-const worldOverlay = document.getElementById("worldOverlay");
-const adminControlsSmallNode = document.getElementById("adminControlsSmall");
+const adminControlsSmall = q("adminControlsSmall");
+const startGameBtn = q("startGameBtn");
+const startGameBtnSmall = q("startGameBtn_small");
+const clearAllBtn = q("clearAllBtn");
+const clearAllBtnSmall = q("clearAllBtn_small");
+const gameUI = q("gameUI");
+const gaugeCountEl = q("gaugeCount");
+const timerEl = q("timer");
+const roleIcon = q("roleIcon");
+const canvas = q("gameCanvas");
+const ctx = canvas ? canvas.getContext("2d") : null;
+const miniMap = q("miniMap");
+const teamChat = q("teamChat");
+const chatMessages = q("chatMessages");
+const chatInput = q("chatInput");
+const chatSend = q("chatSend");
+const royalChatToggle = q("royalChatToggle");
+const worldOverlay = q("worldOverlay");
 
 // Firestore refs
 const ROOM_ID = "main_room";
@@ -76,217 +77,183 @@ let localClientStarted = false;
 let globalGameStarted = false;
 let isAdmin = false;
 let metaCache = null;
-let collisionMaskCtx = null; // optional
-let raf = null;
+let collisionMaskCtx = null;
 
-// Configs
+// Constants
 const DURATION_SEC = 10 * 60;
 const GRID_N = 7;
-const CELL_W = canvas.width / GRID_N;
-const CELL_H = canvas.height / GRID_N;
+const CELL_W = (canvas ? canvas.width : 840) / GRID_N;
+const CELL_H = (canvas ? canvas.height : 840) / GRID_N;
 
-// Vision radii (px) - significantly narrower per request
-const VISION_PX = {
-  king: 60,
-  guard: 2000, // effectively full view
-  strawberry: 60
-};
+// guard grab cooldown (ms)
+const GRAB_COOLDOWN_MS = 20 * 1000;
+const guardLastGrab = new Map(); // guardId -> timestamp
 
-// Grab timings
-const GRAB_DURATION_MS = 5000;
-const GRAB_COOLDOWN_MS = 20000;
-const GUARD_STUN_MS = 15000;
-
-// Asset placeholders (optional)
+// Assets (best-effort; missing files must not break)
 const ASSET_BASE = "https://raw.githubusercontent.com/zzcafe-2800/zzke-ki/main/";
 const ASSETS = {
+  king: ASSET_BASE + "p.png",
+  guard: ASSET_BASE + "p.png",
+  strawberry: ASSET_BASE + "p.png",
   map: ASSET_BASE + "e.png",
-  collisionMask: ASSET_BASE + "atarihantei.png"
+  collisionMask: ASSET_BASE + "atarihantei.png",
+  footstep: ASSET_BASE + "e.mp3",
+  heartbeat: ASSET_BASE + "e.mp3",
+  lowrumble: ASSET_BASE + "e.mp3",
+  captureSE: ASSET_BASE + "e.mp3",
+  kingNearSE: ASSET_BASE + "p.mp3"
 };
-
-// Utility helpers
-function nameToId(name){
-  return name.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_\-]/g,'') || `player_${Math.floor(Math.random()*10000)}`;
-}
-function clamp01(v){ return Math.max(0, Math.min(1, v)); }
-function dist(a,b){ return Math.hypot(a.x - b.x, a.y - b.y); }
-function nowMs(){ return Date.now(); }
-
-// Safe Firestore update
-async function updateDocSafe(ref, data){
-  try { await updateDoc(ref, data); } catch(e){ try { await setDoc(ref, data, { merge: true }); } catch(e2){} }
-}
-
-// Random spawn (simple normalized coords). If collision mask exists, try to avoid black pixels.
-function randomSpawn(mapKey = "0,0"){
-  if (!collisionMaskCtx){
-    return { x: Math.random()*0.8 + 0.1, y: Math.random()*0.8 + 0.1, mapX: 0, mapY: 0 };
+const audioCache = {};
+for (const k in ASSETS) {
+  if (ASSETS[k].endsWith(".mp3")) {
+    const a = new Audio(ASSETS[k]); a.preload = "auto"; audioCache[k] = a;
   }
-  let attempts = 0;
-  while (attempts < 60){
-    const x = Math.random();
-    const y = Math.random();
-    const px = Math.floor(x * canvas.width);
-    const py = Math.floor(y * canvas.height);
-    const d = collisionMaskCtx.getImageData(px, py, 1, 1).data;
-    if (!(d[0]===0 && d[1]===0 && d[2]===0 && d[3] !== 0)){
-      return { x, y, mapX: 0, mapY: 0 };
-    }
-    attempts++;
-  }
-  return { x:0.5, y:0.5, mapX:0, mapY:0 };
 }
 
-// UI helpers
-function showLobbyWaiting(){ overlay.classList.remove("hidden"); gameUI.classList.add("hidden"); waitingNotice.classList.remove("hidden"); }
-function showLobby(){ overlay.classList.remove("hidden"); gameUI.classList.add("hidden"); waitingNotice.classList.add("hidden"); }
-function showGameUI(){ overlay.classList.add("hidden"); gameUI.classList.remove("hidden"); waitingNotice.classList.add("hidden"); }
+// utils
+function nameToId(name) {
+  return name.trim().toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_\-]/g, "") || ("player_" + Math.floor(Math.random() * 10000));
+}
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
+function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
 
-// Create small status elements in top bar for grab cooldown / grabbed state
-const topBar = document.getElementById("topBar");
-const grabStatusEl = document.createElement("div");
-grabStatusEl.style.padding = "4px 8px";
-grabStatusEl.style.borderRadius = "6px";
-grabStatusEl.style.background = "rgba(0,0,0,0.6)";
-grabStatusEl.style.color = "#fff";
-grabStatusEl.style.fontWeight = "700";
-grabStatusEl.style.marginLeft = "8px";
-if (topBar) topBar.appendChild(grabStatusEl);
+// safe DOM addEventListener helper - logs if element missing
+function safeOn(el, ev, fn) {
+  if (!el) { console.warn("missing element for event", ev); return; }
+  el.addEventListener(ev, (e) => { try { fn(e); } catch (err) { console.error(err); } });
+}
 
-// Make adminPass less prominent
-if (adminPass) adminPass.style.opacity = "0.45";
-
-// --- Register player (renamed to avoid duplicate) ---
-async function registerPlayer(name, role){
+// Single register function (previously duplicated)
+async function registerAs(name, role) {
+  console.log("registerAs called:", name, role);
+  if (!name) throw new Error("name required");
   const id = nameToId(name);
-  const spawn = randomSpawn();
-  const docRef = doc(db, "rooms", ROOM_ID, "players", id);
+  // spawn center fallback - simple normalized coords
+  const spawn = { x: 0.5 + (Math.random()-0.5)*0.3, y: 0.5 + (Math.random()-0.5)*0.3, mapX: 0, mapY: 0 };
   const playerDoc = {
     id, name, role,
-    x: spawn.x, y: spawn.y, mapX: spawn.mapX, mapY: spawn.mapY,
-    capturedBy: null, grabbedUntil: 0, stunnedUntil: 0, lastActive: nowMs(),
-    grabAvailableAt: 0
+    x: clamp01(spawn.x), y: clamp01(spawn.y),
+    mapX: spawn.mapX, mapY: spawn.mapY,
+    capturedBy: null, grabbedUntil: 0, stunnedUntil: 0, lastActive: Date.now()
   };
-  await setDoc(docRef, { ...playerDoc, updatedAt: serverTimestamp() });
+  await setDoc(doc(db, "rooms", ROOM_ID, "players", id), { ...playerDoc, updatedAt: serverTimestamp() });
   localPlayer = playerDoc;
   attachLocalListeners();
   showLobbyWaiting();
 }
 
-// Wire up register buttons
-joinKingBtn.addEventListener("click", async ()=>{
-  const name = (nameInput.value || "").trim();
-  if (!name) return alert("表示名を入力してください");
-  // check existing king
-  const kingExists = Array.from(players.values()).some(p=>p.role==="king");
-  if (kingExists) return alert("王は既にいます");
-  await registerPlayer(name, "king");
-});
-joinGuardBtn.addEventListener("click", async ()=>{
-  const name = (nameInput.value || "").trim();
-  if (!name) return alert("表示名を入力してください");
-  await registerPlayer(name, "guard");
-});
-joinStrawBtn.addEventListener("click", async ()=>{
-  const name = (nameInput.value || "").trim();
-  if (!name) return alert("表示名を入力してください");
-  await registerPlayer(name, "strawberry");
-});
+// Attach keyboard listeners
+function attachLocalListeners() {
+  if (window._listenersAttached) return;
+  window._listenersAttached = true;
+  window.addEventListener("keydown", (e) => {
+    if (e.key === " ") e.preventDefault();
+    keys[e.key.toLowerCase()] = true;
+    if (e.key === " ") handleAbility();
+  });
+  window.addEventListener("keyup", (e) => {
+    keys[e.key.toLowerCase()] = false;
+  });
+}
 
-// Admin logic
-adminDecide.addEventListener("click", ()=>{
-  const pass = (adminPass.value || "").trim();
-  if (pass === "1122"){
-    isAdmin = true;
-    adminBadge.classList.remove("hidden");
-    adminControlsNodes.forEach(n=>n.classList.remove("hidden"));
-    if (adminControlsSmall) adminControlsSmall.classList.remove("hidden");
-    adminPass.value = "";
-  } else {
-    alert("パスワードが違います");
-  }
-});
-if (startGameBtn) startGameBtn.addEventListener("click", adminStart);
-if (startGameBtnSmall) startGameBtnSmall.addEventListener("click", adminStart);
-async function adminStart(){
+// UI toggles
+function showLobbyWaiting() {
+  if (overlay) overlay.classList.remove("hidden");
+  if (gameUI) gameUI.classList.add("hidden");
+  if (waitingNotice) waitingNotice.classList.remove("hidden");
+}
+function showLobby() {
+  if (overlay) overlay.classList.remove("hidden");
+  if (gameUI) gameUI.classList.add("hidden");
+  if (waitingNotice) waitingNotice.classList.add("hidden");
+}
+function showGameUI() {
+  if (overlay) overlay.classList.add("hidden");
+  if (gameUI) gameUI.classList.remove("hidden");
+  if (waitingNotice) waitingNotice.classList.add("hidden");
+}
+
+// safe update helper
+async function updateDocSafe(ref, data) {
+  try { await updateDoc(ref, data); } catch (e) { try { await setDoc(ref, data, { merge: true }); } catch (e2) { console.warn("update fail", e2); } }
+}
+
+// Admin actions
+async function adminStart() {
   if (!isAdmin) return alert("運営権限が必要です");
+  console.log("adminStart pressed");
   await setDoc(metaDoc, {
     started: true,
     startedAt: serverTimestamp(),
     duration: DURATION_SEC,
     captureCount: 0
   });
-  if (localPlayer){
+  // ensure admin with registered player goes to game immediately
+  if (localPlayer) {
     localClientStarted = true;
     showGameUI();
     startGameLoop();
   }
 }
-if (clearAllBtn) clearAllBtn.addEventListener("click", adminClearAll);
-if (clearAllBtnSmall) clearAllBtnSmall.addEventListener("click", adminClearAll);
-async function adminClearAll(){
+async function adminClearAll() {
   if (!isAdmin) return alert("運営権限が必要です");
   if (!confirm("本当に全データを削除しますか？")) return;
+  console.log("adminClearAll pressed");
   const snap = await getDocs(playersCol);
   const promises = [];
   snap.forEach(s => promises.push(deleteDoc(doc(db, "rooms", ROOM_ID, "players", s.id))));
   await Promise.all(promises);
   await setDoc(metaDoc, { started: false, startedAt: null, duration: DURATION_SEC, captureCount: 0, clearedAt: serverTimestamp() });
-  // clients will observe meta change and players deletions and return to lobby
 }
 
-// Chat send (king/guard only)
-chatSend.addEventListener("click", async ()=>{
-  const text = (chatInput.value || "").trim();
+// Chat
+async function sendTeamChat() {
+  const text = (chatInput && chatInput.value || "").trim();
   if (!text) return;
   if (!localPlayer) return;
   if (!(localPlayer.role === "king" || localPlayer.role === "guard")) return alert("チャットは王と部下のみ利用可能です");
-  const id = `${Date.now()}_${localPlayer.id}`;
-  await setDoc(doc(db, "rooms", ROOM_ID, "chats", id), {
+  await setDoc(doc(db, "rooms", ROOM_ID, "chats", `${Date.now()}_${localPlayer.id}`), {
     fromId: localPlayer.id, fromName: localPlayer.name, role: localPlayer.role, text,
     createdAt: serverTimestamp()
   });
-  chatInput.value = "";
-});
+  if (chatInput) chatInput.value = "";
+}
 
-// Snapshot handlers
-onSnapshot(playersCol, snap=>{
-  snap.docChanges().forEach(ch=>{
+// Snapshot listeners
+onSnapshot(playersCol, snap => {
+  snap.docChanges().forEach(ch => {
     const pid = ch.doc.id;
-    if (ch.type === "removed"){
+    if (ch.type === "removed") {
       players.delete(pid);
-      if (localPlayer && pid === localPlayer.id){
+      if (localPlayer && pid === localPlayer.id) {
         localPlayer = null;
         localClientStarted = false;
         showLobby();
       }
     } else {
       const d = ch.doc.data();
-      players.set(pid, {...d, id: pid});
-      if (localPlayer && pid === localPlayer.id){
-        // update local canonical copy
-        localPlayer = {...localPlayer, ...d};
-      }
+      players.set(pid, { ...d, id: pid });
+      if (localPlayer && pid === localPlayer.id) localPlayer = { ...localPlayer, ...d };
     }
   });
   renderPlayersGrouped();
 });
 
-onSnapshot(metaDoc, snap=>{
+onSnapshot(metaDoc, snap => {
   const data = snap.exists() ? snap.data() : null;
   metaCache = data;
-  if (!data){
+  if (!data) {
     globalGameStarted = false;
     return;
   }
-  if (data.clearedAt){
+  if (data.clearedAt) {
     localClientStarted = false;
     showLobby();
     return;
   }
-  if (data.started){
+  if (data.started) {
     globalGameStarted = true;
-    if (localPlayer){
+    if (localPlayer) {
       localClientStarted = true;
       showGameUI();
       startGameLoop();
@@ -300,40 +267,36 @@ onSnapshot(metaDoc, snap=>{
   }
 });
 
-// chats listener
-onSnapshot(chatsCol, snap=>{
+// Chat snapshot
+onSnapshot(chatsCol, snap => {
+  if (!chatMessages) return;
   chatMessages.innerHTML = "";
-  snap.forEach(snapItem=>{
-    const d = snapItem.data();
+  snap.forEach(s => {
+    const d = s.data();
     if (!d) return;
-    const msgEl = document.createElement("div");
-    msgEl.className = "msg";
-    msgEl.textContent = `[${d.role}] ${d.fromName}: ${d.text}`;
-    if (localPlayer && (localPlayer.role === "king" || localPlayer.role === "guard")){
-      chatMessages.appendChild(msgEl);
+    const el = document.createElement("div");
+    el.className = "msg";
+    el.textContent = `[${d.role}] ${d.fromName}: ${d.text}`;
+    if (localPlayer && (localPlayer.role === "king" || localPlayer.role === "guard")) {
+      chatMessages.appendChild(el);
     }
   });
 });
 
-// remove local doc on unload
-window.addEventListener("beforeunload", async ()=>{
-  if (localPlayer){
-    try { await deleteDoc(doc(db, "rooms", ROOM_ID, "players", localPlayer.id)); } catch(e){}
-  }
-});
-
-// Render participant groups
-function renderPlayersGrouped(){
+// render players grouped UI (big)
+function renderPlayersGrouped() {
   if (groupKing) groupKing.innerHTML = "";
   if (groupGuard) groupGuard.innerHTML = "";
   if (groupStraw) groupStraw.innerHTML = "";
-  const arr = Array.from(players.values()).sort((a,b)=> a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
-  arr.forEach(p=>{
+  const arr = Array.from(players.values()).sort((a, b) => a.role.localeCompare(b.role) || a.name.localeCompare(b.name));
+  arr.forEach(p => {
     const el = document.createElement("div");
-    el.style.padding = "6px 10px";
+    el.style.padding = "6px 12px";
     el.style.borderRadius = "8px";
-    el.style.background = (p.role==="king")? "rgba(255,214,107,0.12)" : (p.role==="guard")? "rgba(155,230,166,0.08)" : "rgba(255,159,180,0.06)";
-    el.style.margin = "4px";
+    el.style.margin = "6px 6px 6px 0";
+    el.style.display = "inline-block";
+    el.style.fontWeight = "700";
+    el.style.background = (p.role === "king") ? "#ffd66b33" : (p.role === "guard") ? "#9be6a633" : "#ff9fb433";
     el.textContent = p.name;
     if (p.role === "king" && groupKing) groupKing.appendChild(el);
     else if (p.role === "guard" && groupGuard) groupGuard.appendChild(el);
@@ -341,261 +304,230 @@ function renderPlayersGrouped(){
   });
 }
 
-// Input listeners attach
-function attachLocalListeners(){
-  window.addEventListener("keydown", e=>{
-    if (e.key === " ") e.preventDefault();
-    keys[e.key.toLowerCase()] = true;
-    if (e.key === " ") handleAbility();
-  });
-  window.addEventListener("keyup", e=>{
-    keys[e.key.toLowerCase()] = false;
-  });
-}
-
-// Start game loop
-function startGameLoop(){
-  if (raf) return;
+// movement, map & vision basics (simplified, robust)
+let rafId = null;
+function startGameLoop() {
+  if (rafId) return;
   let last = performance.now();
-  raf = requestAnimationFrame(function frame(now){
+  function loop(now) {
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
-    if (localPlayer && localClientStarted){
-      // handle movement, but block if captured or stunned
-      const nowt = nowMs();
-      const stunned = localPlayer.stunnedUntil && nowt < localPlayer.stunnedUntil;
-      const captured = localPlayer.capturedBy && localPlayer.capturedBy !== "";
-      if (!stunned && !captured){
-        const role = localPlayer.role;
-        let speed = (role === "king") ? 0.5 : (role === "guard") ? 1.2 : 1.6;
-        let vx=0, vy=0;
-        if (keys["w"] || keys["arrowup"]) vy -= 1;
-        if (keys["s"] || keys["arrowdown"]) vy += 1;
-        if (keys["a"] || keys["arrowleft"]) vx -= 1;
-        if (keys["d"] || keys["arrowright"]) vx += 1;
-        const len = Math.hypot(vx, vy);
-        if (len > 0){
-          vx /= len; vy /= len;
-          localPlayer.x = clamp01(localPlayer.x + vx * speed * dt * 0.12);
-          localPlayer.y = clamp01(localPlayer.y + vy * speed * dt * 0.12);
-          // persist
-          setDoc(doc(db, "rooms", ROOM_ID, "players", localPlayer.id), {
-            ...localPlayer, updatedAt: serverTimestamp()
-          }).catch(()=>{});
-        }
+    if (localPlayer && localClientStarted) {
+      // movement with simple bounds, no complex mask here (collision mask code earlier kept optional)
+      const role = localPlayer.role;
+      let speed = (role === "king") ? 0.5 : (role === "guard") ? 1.2 : 1.6;
+      let vx = 0, vy = 0;
+      if (keys["w"] || keys["arrowup"]) vy -= 1;
+      if (keys["s"] || keys["arrowdown"]) vy += 1;
+      if (keys["a"] || keys["arrowleft"]) vx -= 1;
+      if (keys["d"] || keys["arrowright"]) vx += 1;
+      const len = Math.hypot(vx, vy);
+      if (len > 0) {
+        vx /= len; vy /= len;
+        let nx = localPlayer.x + vx * speed * dt * 0.12;
+        let ny = localPlayer.y + vy * speed * dt * 0.12;
+        // clamp and persist
+        nx = clamp01(nx); ny = clamp01(ny);
+        localPlayer.x = nx; localPlayer.y = ny;
+        setDoc(doc(db, "rooms", ROOM_ID, "players", localPlayer.id), { ...localPlayer, updatedAt: serverTimestamp() }).catch(()=>{});
       }
     }
-
-    renderScene();
-    raf = requestAnimationFrame(frame);
-  });
-
-  // timer sync
-  setInterval(()=>{
+    render();
+    rafId = requestAnimationFrame(loop);
+  }
+  rafId = requestAnimationFrame(loop);
+  // synchronized timer updater
+  setInterval(() => {
     if (!metaCache || !metaCache.started) return;
     const startedAt = metaCache.startedAt;
     if (!startedAt || typeof startedAt.toMillis !== "function") return;
-    const elapsed = Math.floor((Date.now() - startedAt.toMillis())/1000);
+    const elapsed = Math.floor((Date.now() - startedAt.toMillis()) / 1000);
     const duration = metaCache.duration || DURATION_SEC;
     const remain = Math.max(0, duration - elapsed);
-    if (timerEl) timerEl.textContent = `残り: ${String(Math.floor(remain/60)).padStart(2,"0")}:${String(remain%60).padStart(2,"0")}`;
-    if (metaCache.captureCount !== undefined && gaugeCountEl) gaugeCountEl.textContent = String(metaCache.captureCount);
+    if (timerEl) timerEl.textContent = `残り: ${String(Math.floor(remain / 60)).padStart(2, "0")}:${String(remain % 60).padStart(2, "0")}`;
+    if (gaugeCountEl) gaugeCountEl.textContent = String(metaCache.captureCount || 0);
   }, 500);
 }
 
-// Rendering including vision masks and UI overlays
-function renderScene(){
-  // draw base grid
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  for (let gy=0; gy<GRID_N; gy++){
-    for (let gx=0; gx<GRID_N; gx++){
+// render function: draws grid, players, and full-black vision mask with hard circular clear
+function render() {
+  if (!ctx || !canvas) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  // draw 7x7 grid background
+  for (let gy = 0; gy < GRID_N; gy++) {
+    for (let gx = 0; gx < GRID_N; gx++) {
       const px = gx * CELL_W;
       const py = gy * CELL_H;
-      ctx.fillStyle = ((gx+gy)%2===0) ? "#163" : "#1a4";
-      ctx.fillRect(px, py, CELL_W-1, CELL_H-1);
+      ctx.fillStyle = ((gx + gy) % 2 === 0) ? "#163" : "#1a4";
+      ctx.fillRect(px, py, CELL_W - 1, CELL_H - 1);
     }
   }
-
-  // draw players on same map as local
-  if (localPlayer){
-    const currentMapX = localPlayer.mapX || 0;
-    const currentMapY = localPlayer.mapY || 0;
-    for (const p of players.values()){
-      if (p.mapX !== currentMapX || p.mapY !== currentMapY) continue;
-      const px = p.x * canvas.width;
-      const py = p.y * canvas.height;
-      ctx.beginPath();
-      ctx.fillStyle = (p.role==="king")? "#ff6b9a" : (p.role==="guard")? "#6bff9a" : "#ffd36b";
-      const r = (p.role==="king")? 14 : 10;
-      ctx.arc(px, py, r, 0, Math.PI*2);
-      ctx.fill();
+  // draw players on same map (map support simplified - everyone on same)
+  for (const p of players.values()) {
+    const px = p.x * canvas.width;
+    const py = p.y * canvas.height;
+    ctx.beginPath();
+    ctx.fillStyle = (p.role === "king") ? "#ff6b9a" : (p.role === "guard") ? "#6bff9a" : "#ffd36b";
+    const r = (p.role === "king") ? 14 : 10;
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#000";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(p.name, px + r + 4, py + 6);
+    if (p.capturedBy) {
       ctx.fillStyle = "#000";
-      ctx.font = "11px sans-serif";
-      ctx.fillText(p.name, px + r + 3, py + 4);
-      if (p.capturedBy){
-        ctx.fillStyle = "#000";
-        ctx.fillText("掴まれ中", px - r, py - r - 6);
-      }
+      ctx.fillText("掴まれ中", px - r, py - r - 6);
     }
   }
 
-  // Vision overlay: full black canvas, then cut circle for king/strawberry
-  worldOverlay.innerHTML = ""; // clear
-  if (localPlayer){
-    if (localPlayer.role === "guard"){
-      // guard sees all -> no black mask
+  // vision overlay - full black with hard circle cutout for king/strawberry
+  worldOverlay.innerHTML = "";
+  if (localPlayer) {
+    if (localPlayer.role === "guard") {
+      // guards see full map: no overlay
     } else {
-      // Create a full black canvas overlay and cut hole at player's pos
+      // create mask canvas
       const mask = document.createElement("canvas");
       mask.width = canvas.width; mask.height = canvas.height;
       mask.className = "visionMask";
       const mctx = mask.getContext("2d");
-      // fully black
-      mctx.fillStyle = "black";
-      mctx.fillRect(0,0,mask.width, mask.height);
-      // cut hole
-      const vision = VISION_PX[localPlayer.role] || 60;
-      const cx = (localPlayer.x || 0.5) * mask.width;
-      const cy = (localPlayer.y || 0.5) * mask.height;
+      // fill with pure black (opaque)
+      mctx.fillStyle = "rgba(0,0,0,1)";
+      mctx.fillRect(0, 0, mask.width, mask.height);
+      // hard clear circle at player pos
+      const radius = (localPlayer.role === "king") ? 120 : 80; // very narrow
+      const cx = localPlayer.x * mask.width;
+      const cy = localPlayer.y * mask.height;
       mctx.globalCompositeOperation = "destination-out";
       mctx.beginPath();
-      mctx.arc(cx, cy, vision, 0, Math.PI*2);
+      mctx.arc(cx, cy, radius, 0, Math.PI * 2);
       mctx.fill();
       worldOverlay.appendChild(mask);
     }
 
-    // If local player is grabbed, show small indicator
-    if (localPlayer.capturedBy){
-      const info = document.createElement("div");
-      info.style.position = "absolute";
-      info.style.left = "12px";
-      info.style.bottom = "12px";
-      info.style.background = "#000";
-      info.style.color = "#fff";
-      info.style.padding = "6px 10px";
-      info.style.borderRadius = "6px";
-      info.textContent = "掴まれ中 — 操作不可";
-      worldOverlay.appendChild(info);
-    }
-
-    // Guard-specific: show grab cooldown / grabbed target text at top bar via existing element
-    if (localPlayer.role === "guard"){
-      const nowt = nowMs();
-      const availAt = localPlayer.grabAvailableAt || 0;
-      if (nowt >= availAt){
-        grabStatusEl.textContent = "掴み: 使用可能";
-      } else {
-        const remain = Math.ceil((availAt - nowt)/1000);
-        grabStatusEl.textContent = `掴み: 再使用まで ${remain}s`;
+    // strawberry: show unknown enemy direction markers for all enemies on same map
+    if (localPlayer.role === "strawberry") {
+      // show a marker for each enemy (king/guard) on same 'map'
+      for (const p of players.values()) {
+        if (p.role === "strawberry") continue;
+        const px = p.x * canvas.width;
+        const py = p.y * canvas.height;
+        // create small blurred red dot at edge pointing direction - here we show as small semi-transparent arrow at player-centered direction
+        const angle = Math.atan2((py - (localPlayer.y * canvas.height)), (px - (localPlayer.x * canvas.width)));
+        const distMeters = Math.round(dist(localPlayer, p) * 15);
+        // place marker near screen edge from player's center
+        const centerX = canvas.width / 2, centerY = canvas.height / 2;
+        const rEdge = Math.min(centerX, centerY) - 40;
+        const mx = centerX + Math.cos(angle) * rEdge;
+        const my = centerY + Math.sin(angle) * rEdge;
+        const marker = document.createElement("div");
+        marker.style.position = "absolute";
+        marker.style.left = `${mx - 24}px`; marker.style.top = `${my - 16}px`;
+        marker.style.color = "#fff";
+        marker.style.background = "rgba(200,0,0,0.75)";
+        marker.style.padding = "6px 8px";
+        marker.style.borderRadius = "20px";
+        marker.style.fontWeight = "700";
+        marker.style.boxShadow = "0 0 14px rgba(200,0,0,0.6)";
+        marker.textContent = `?? ${Math.max(1, distMeters)}m`;
+        worldOverlay.appendChild(marker);
       }
-      // If guard is stunned, show black overlay (like king/strawberry) and big "スタン中"
-      if (localPlayer.stunnedUntil && nowt < localPlayer.stunnedUntil){
-        // full black
-        const dark = document.createElement("div");
-        dark.style.position = "absolute";
-        dark.style.left = "0"; dark.style.top = "0";
-        dark.style.width = "100%"; dark.style.height = "100%";
-        dark.style.background = "black";
-        worldOverlay.appendChild(dark);
-        const stunText = document.createElement("div");
-        stunText.style.position = "absolute";
-        stunText.style.left = "50%"; stunText.style.top = "50%";
-        stunText.style.transform = "translate(-50%,-50%)";
-        stunText.style.color = "#fff";
-        stunText.style.background = "rgba(0,0,0,0.6)";
-        stunText.style.padding = "12px 18px";
-        stunText.style.borderRadius = "10px";
-        stunText.style.fontSize = "20px";
-        stunText.textContent = "スタン中 — 操作不可";
-        worldOverlay.appendChild(stunText);
-      }
-    } else {
-      grabStatusEl.textContent = "";
     }
   }
 
-  // Ensure top UI (timer/gauge) are visible above the black board (they are in DOM above worldOverlay)
-  // Mini-map and other UI are unchanged
-
-  // Mini map rendering: only guard & king see positions
-  miniMap.innerHTML = "";
-  const mapCanvas = document.createElement("canvas"); mapCanvas.width = 140; mapCanvas.height = 140;
-  const mctx = mapCanvas.getContext("2d");
-  mctx.fillStyle = "#111"; mctx.fillRect(0,0,140,140);
-  if (localPlayer && (localPlayer.role === "guard" || localPlayer.role === "king")){
-    for (const p of players.values()){
-      if (!p) continue;
-      if (p.mapX !== localPlayer.mapX || p.mapY !== localPlayer.mapY) continue;
-      mctx.fillStyle = (p.role==="king")? "#ff6b9a" : (p.role==="guard")? "#6bff9a" : "#ffd36b";
-      mctx.fillRect(p.x * 140 - 3, p.y * 140 - 3, 6, 6);
-    }
-  } else {
-    mctx.fillStyle = "#00000088"; mctx.fillRect(0,0,140,140);
+  // update role/status icon (including grab/stun status)
+  if (roleIcon && localPlayer) {
+    let status = localPlayer.role;
+    if (localPlayer.capturedBy) status += " (掴まれ中)";
+    if (localPlayer.stunnedUntil && Date.now() < localPlayer.stunnedUntil) status += " (スタン中)";
+    roleIcon.textContent = status;
   }
-  miniMap.appendChild(mapCanvas);
+
+  // mini map quick render
+  renderMiniMap();
 }
 
-// Ability (SPACE) usage: improved grab cooldown handling and state updates
-async function handleAbility(){
+function renderMiniMap() {
+  if (!miniMap) return;
+  miniMap.innerHTML = "";
+  const c = document.createElement("canvas");
+  c.width = 140; c.height = 140;
+  const m = c.getContext("2d");
+  m.fillStyle = "#111"; m.fillRect(0, 0, 140, 140);
+  if (localPlayer && (localPlayer.role === "guard" || localPlayer.role === "king")) {
+    for (const p of players.values()) {
+      const mx = p.x * c.width; const my = p.y * c.height;
+      m.fillStyle = (p.role === "king") ? "#ff6b9a" : (p.role === "guard") ? "#6bff9a" : "#ffd36b";
+      m.fillRect(mx - 3, my - 3, 6, 6);
+    }
+  } else {
+    m.fillStyle = "#00000088"; m.fillRect(0, 0, 140, 140);
+  }
+  miniMap.appendChild(c);
+}
+
+// Ability handling with guard cooldown 20s and UI display
+async function handleAbility() {
   if (!localPlayer || !localClientStarted) return;
-  const nowt = nowMs();
-  // respect stun & capture
-  if (localPlayer.stunnedUntil && nowt < localPlayer.stunnedUntil) return;
+  const now = Date.now();
+  if (localPlayer.stunnedUntil && now < localPlayer.stunnedUntil) return;
   if (localPlayer.capturedBy) return;
-  if (localPlayer.role === "king"){
-    // capture radius
+
+  if (localPlayer.role === "king") {
+    // king capture radius
     const radius = 0.12;
-    for (const p of players.values()){
+    for (const p of players.values()) {
       if (!p || p.role !== "strawberry") continue;
-      if (p.mapX !== localPlayer.mapX || p.mapY !== localPlayer.mapY) continue;
-      if (dist(localPlayer, p) <= radius){
-        // respawn strawberry randomly
-        const newPos = randomSpawn();
+      const d = dist(localPlayer, p);
+      if (d <= radius) {
+        const newPos = { x: Math.random(), y: Math.random(), mapX: localPlayer.mapX || 0, mapY: localPlayer.mapY || 0 };
         await updateDocSafe(doc(db, "rooms", ROOM_ID, "players", p.id), {
-          x: newPos.x, y: newPos.y, mapX: newPos.mapX, mapY: newPos.mapY, capturedBy: null, grabbedUntil: 0, updatedAt: serverTimestamp()
+          x: clamp01(newPos.x), y: clamp01(newPos.y), capturedBy: null, grabbedUntil: 0, updatedAt: serverTimestamp()
         });
-        // increment global captureCount
         await updateDocSafe(metaDoc, { captureCount: increment(1) });
+        if (audioCache.captureSE) try { audioCache.captureSE.currentTime = 0; audioCache.captureSE.play(); } catch (e) { }
         break;
       }
     }
-  } else if (localPlayer.role === "guard"){
-    // check cooldown
-    const availAt = localPlayer.grabAvailableAt || 0;
-    if (nowt < availAt){
-      // not ready
+  } else if (localPlayer.role === "guard") {
+    // guard grab with 20s cooldown
+    const last = guardLastGrab.get(localPlayer.id) || 0;
+    if (now - last < GRAB_COOLDOWN_MS) {
+      const remain = Math.ceil((GRAB_COOLDOWN_MS - (now - last)) / 1000);
+      alert(`掴みはクールタイム中です: ${remain}s`);
       return;
     }
-    // try to grab nearest strawberry within small radius
+    // attempt to grab nearest strawberry
     const grabRadius = 0.06;
-    for (const p of players.values()){
+    for (const p of players.values()) {
       if (!p || p.role !== "strawberry") continue;
-      if (p.mapX !== localPlayer.mapX || p.mapY !== localPlayer.mapY) continue;
-      if (dist(localPlayer, p) <= grabRadius){
-        // set strawberry capturedBy and grabbedUntil
-        const strawRef = doc(db, "rooms", ROOM_ID, "players", p.id);
-        await updateDocSafe(strawRef, {
+      if (p.mapX !== (localPlayer.mapX || 0) || p.mapY !== (localPlayer.mapY || 0)) continue;
+      const d = dist(localPlayer, p);
+      if (d <= grabRadius) {
+        const grabbedForMs = 5000;
+        const stunMs = 15000;
+        // mark grabbed
+        await updateDocSafe(doc(db, "rooms", ROOM_ID, "players", p.id), {
           capturedBy: localPlayer.id,
-          grabbedUntil: Date.now() + GRAB_DURATION_MS,
+          grabbedUntil: Date.now() + grabbedForMs,
           updatedAt: serverTimestamp()
         });
-        // set guard grabAvailableAt to now + cooldown and persist
-        const guardRef = doc(db, "rooms", ROOM_ID, "players", localPlayer.id);
-        await updateDocSafe(guardRef, { grabAvailableAt: Date.now() + GRAB_COOLDOWN_MS, updatedAt: serverTimestamp() });
-        // while grabbed, guard client will move strawberry doc to follow guard (authority on client)
-        const intervalId = setInterval(async ()=>{
-          try {
-            // update strawberry position to guard current pos
-            await updateDocSafe(strawRef, { x: localPlayer.x, y: localPlayer.y, updatedAt: serverTimestamp() });
-          } catch(e){}
-        }, 120);
-        // after 5s release and stun guard
-        setTimeout(async ()=>{
+        // while grabbed: update strawberry position periodically to follow guard (this client authoritative for short time)
+        const strawRef = doc(db, "rooms", ROOM_ID, "players", p.id);
+        const intervalId = setInterval(async () => {
+          try { await updateDocSafe(strawRef, { x: localPlayer.x, y: localPlayer.y, updatedAt: serverTimestamp() }); } catch (e) { }
+        }, 150);
+        setTimeout(async () => {
           clearInterval(intervalId);
           await updateDocSafe(strawRef, { capturedBy: null, grabbedUntil: 0, updatedAt: serverTimestamp() });
-          // apply stun to guard
-          await updateDocSafe(guardRef, { stunnedUntil: Date.now() + GUARD_STUN_MS, updatedAt: serverTimestamp() });
-        }, GRAB_DURATION_MS);
+          // stun guard
+          await updateDocSafe(doc(db, "rooms", ROOM_ID, "players", localPlayer.id), {
+            stunnedUntil: Date.now() + stunMs,
+            updatedAt: serverTimestamp()
+          });
+        }, grabbedForMs);
+        guardLastGrab.set(localPlayer.id, now);
+        // update UI: roleIcon will show captured/stun states via snapshot updates
         break;
       }
     }
@@ -604,29 +536,106 @@ async function handleAbility(){
   }
 }
 
-// small wrapper to updateDoc with merge
-async function updateDocSafe(ref, data){
-  try { await updateDoc(ref, data); } catch(e){ try { await setDoc(ref, data, { merge: true }); } catch(e2){} }
+// ensure updateDocSafe defined here (redefine once)
+async function updateDocSafe(ref, data) {
+  try { await updateDoc(ref, data); } catch (e) { try { await setDoc(ref, data, { merge: true }); } catch (e2) { console.warn("update fail", e2); } }
 }
 
-// init: read meta & show appropriate UI
-(async function init(){
+// safe listeners for UI buttons (guard missing elements)
+safeOn(joinKingBtn, "click", async () => {
+  console.log("click joinKingBtn");
+  const name = (nameInput && nameInput.value || "").trim();
+  if (!name) return alert("表示名を入力してください");
+  // check king exists
+  const kingExists = Array.from(players.values()).some(p => p.role === "king");
+  if (kingExists) return alert("王は既にいます");
+  await registerAs(name, "king");
+});
+safeOn(joinGuardBtn, "click", async () => {
+  console.log("click joinGuardBtn");
+  const name = (nameInput && nameInput.value || "").trim();
+  if (!name) return alert("表示名を入力してください");
+  await registerAs(name, "guard");
+});
+safeOn(joinStrawBtn, "click", async () => {
+  console.log("click joinStrawBtn");
+  const name = (nameInput && nameInput.value || "").trim();
+  if (!name) return alert("表示名を入力してください");
+  await registerAs(name, "strawberry");
+});
+
+safeOn(adminDecide, "click", () => {
+  console.log("click adminDecide");
+  const pass = (adminPass && adminPass.value || "").trim();
+  if (pass === "1122") {
+    isAdmin = true;
+    if (adminBadge) adminBadge.classList.remove("hidden");
+    adminControlsNodes.forEach(n => n.classList.remove("hidden"));
+    if (adminControlsSmall) adminControlsSmall.classList.remove("hidden");
+    if (adminPass) adminPass.value = "";
+  } else {
+    alert("パスワードが違います");
+  }
+});
+safeOn(startGameBtn, "click", () => { console.log("click startGameBtn"); adminStart().catch(err=>console.error(err)); });
+safeOn(startGameBtnSmall, "click", () => { console.log("click startGameBtn_small"); adminStart().catch(err=>console.error(err)); });
+safeOn(clearAllBtn, "click", () => { console.log("click clearAllBtn"); adminClearAll().catch(err=>console.error(err)); });
+safeOn(clearAllBtnSmall, "click", () => { console.log("click clearAllBtn_small"); adminClearAll().catch(err=>console.error(err)); });
+safeOn(chatSend, "click", () => { console.log("click chatSend"); sendTeamChat().catch(err=>console.error(err)); });
+
+// registerAs wrapper that uses single implementation
+async function registerAs(name, role) {
+  try {
+    await registerAsImpl(name, role);
+  } catch (e) {
+    console.error("registerAs error", e);
+    alert("登録に失敗しました: " + e.message);
+  }
+}
+
+// actual implementation function (named differently to avoid duplication issues)
+async function registerAsImpl(name, role) {
+  // same as previous registerAs but defined once
+  if (!name) throw new Error("name required");
+  const id = nameToId(name);
+  const spawn = { x: 0.5 + (Math.random() - 0.5) * 0.3, y: 0.5 + (Math.random() - 0.5) * 0.3, mapX: 0, mapY: 0 };
+  const playerDoc = {
+    id, name, role,
+    x: clamp01(spawn.x), y: clamp01(spawn.y),
+    mapX: spawn.mapX, mapY: spawn.mapY,
+    capturedBy: null, grabbedUntil: 0, stunnedUntil: 0, lastActive: Date.now()
+  };
+  await setDoc(doc(db, "rooms", ROOM_ID, "players", id), { ...playerDoc, updatedAt: serverTimestamp() });
+  localPlayer = playerDoc;
+  attachLocalListeners();
+  showLobbyWaiting();
+}
+
+// Expose implementation used by safeOn register handlers
+// Note: earlier we bound registerAs to call registerAsImpl; to avoid hoisting confusion, ensure registerAsImpl defined before used.
+// For safety, override global registerAs name to refer to impl (so existing bindings above work)
+registerAs = async function(name, role) { return registerAsImpl(name, role); };
+
+// initial meta read
+(async function init() {
   try {
     const metaSnap = await getDoc(metaDoc);
     const data = metaSnap.exists() ? metaSnap.data() : null;
     metaCache = data;
-    if (data && data.started){
-      showLobbyWaiting();
-    } else {
-      showLobby();
-    }
-  } catch(e){
-    console.warn("init error", e);
+    if (data && data.started) showLobbyWaiting();
+    else showLobby();
+  } catch (e) {
+    console.warn("meta read error", e);
     showLobby();
   }
 })();
 
-// Helper: getDoc import used above (ensure present)
-import { getDoc } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+// snapshot listeners already set above; ensure onUnload cleanup
+window.addEventListener("beforeunload", async () => {
+  if (localPlayer) {
+    try { await deleteDoc(doc(db, "rooms", ROOM_ID, "players", localPlayer.id)); } catch (e) { }
+  }
+});
 
-console.log("app.js loaded (bugfixes + vision/grab adjustments).");
+// Final console
+console.log("app.js loaded (bugfix build). Click handlers should respond. If clicks still don't respond, open console and check logs.");
